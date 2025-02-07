@@ -33,7 +33,7 @@ impl Halide {
             latent_threshold: 100,
             activated: false,
             spectral_sensitivity: 0.0,
-            absorption_probability: 0.1,
+            absorption_probability: 0.5,
         }
     }
 
@@ -57,32 +57,80 @@ impl Halide {
     }
 }
 
+use rand::Rng;
+
+fn create_random_emulsion(width: u32, height: u32, num_grains: usize) -> Vec<Halide> {
+    let mut rng = rand::rng();
+    let mut emulsion = Vec::with_capacity(num_grains);
+
+    for _ in 0..num_grains {
+        let x = rng.random_range(0..width as usize);
+        let y = rng.random_range(0..height as usize);
+
+        // Possibly randomize radius too
+        let radius = rng.random_range(1..3);
+
+        emulsion.push(Halide {
+            x,
+            y,
+            radius,
+            silver_count: 0,
+            latent_threshold: 100,
+            activated: false,
+            spectral_sensitivity: 0.0,
+            absorption_probability: 0.5,
+        });
+    }
+    emulsion
+}
+
+fn render_emulsion(emulsion: &Vec<Halide>, width: u32, height: u32) -> image::GrayImage {
+    let mut output = image::GrayImage::new(width, height);
+
+    for grain in emulsion {
+        if grain.activated {
+            // Mark a small circle
+            let r2 = (grain.radius * grain.radius) as i32;
+            let gx = grain.x as i32;
+            let gy = grain.y as i32;
+            let radius = grain.radius as i32;
+
+            for dy in -radius as i32..=radius as i32 {
+                for dx in -radius as i32..=radius as i32 {
+                    if dx * dx + dy * dy <= r2 {
+                        let px = gx + dx;
+                        let py = gy + dy;
+                        if px >= 0 && py >= 0 && px < (width as i32) && py < (height as i32) {
+                            output.put_pixel(px as u32, py as u32, image::Luma([255]));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    output
+}
+
 fn main() {
     tracing_subscriber::fmt::init();
 
     tracing::info!("Creating emulsion");
-    let mut emulsion = Vec::new();
-    let num_grains = 1000;
-    for x in 0..num_grains {
-        for y in 0..num_grains {
-            emulsion.push(Halide::new(x, y));
-        }
-    }
 
     // open input image
     let image = image::open("input.png").unwrap();
     let image = image.to_luma16();
     let (width, height) = image.dimensions();
 
+    let num_grains = 100000;
+    let mut emulsion = create_random_emulsion(width, height, num_grains);
+
     // expose emulsion to image
     tracing::info!("Exposing emulsion to image");
     emulsion.par_iter_mut().for_each(|grain| {
-        let x = (grain.x * (width as usize)) / num_grains;
-        let y = (grain.y * (height as usize)) / num_grains;
-        let intensity =
-            ((image.get_pixel(x as u32, y as u32).0[0] as f32) / (u16::MAX as f32)) * 1000.0;
-        // println!("Exposing grain at ({}, {}) to intensity {}", grain.x, grain.y, intensity);
-        grain.expose(intensity, 1.0);
+        let pixel_val = image.get_pixel(grain.x as u32, grain.y as u32).0[0];
+        let intensity = ((pixel_val as f32) / (u16::MAX as f32)) * 10.0;
+        grain.expose(intensity, 5.0);
     });
 
     for grain in &emulsion {
@@ -93,13 +141,6 @@ fn main() {
 
     // save activated grains to output image
     tracing::info!("Saving activated grains to output image");
-    let mut output = image::GrayImage::new(width, height);
-    for grain in &emulsion {
-        if grain.activated {
-            let x = (grain.x * (width as usize)) / num_grains;
-            let y = (grain.y * (height as usize)) / num_grains;
-            output.put_pixel(x as u32, y as u32, image::Luma([u8::MAX]));
-        }
-    }
+    let output = render_emulsion(&emulsion, width, height);
     output.save("output.png").unwrap();
 }
