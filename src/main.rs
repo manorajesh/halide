@@ -1,3 +1,5 @@
+use rayon::prelude::*;
+
 /// Individual silver halide grain in a photographic emulsion
 struct Halide {
     /// x position of grain in emulsion
@@ -56,6 +58,9 @@ impl Halide {
 }
 
 fn main() {
+    tracing_subscriber::fmt::init();
+
+    tracing::info!("Creating emulsion");
     let mut emulsion = Vec::new();
     let num_grains = 1000;
     for x in 0..num_grains {
@@ -70,14 +75,15 @@ fn main() {
     let (width, height) = image.dimensions();
 
     // expose emulsion to image
-    for grain in &mut emulsion {
+    tracing::info!("Exposing emulsion to image");
+    emulsion.par_iter_mut().for_each(|grain| {
         let x = (grain.x * (width as usize)) / num_grains;
         let y = (grain.y * (height as usize)) / num_grains;
         let intensity =
             ((image.get_pixel(x as u32, y as u32).0[0] as f32) / (u16::MAX as f32)) * 1000.0;
         // println!("Exposing grain at ({}, {}) to intensity {}", grain.x, grain.y, intensity);
         grain.expose(intensity, 1.0);
-    }
+    });
 
     for grain in &emulsion {
         if grain.activated {
@@ -86,6 +92,7 @@ fn main() {
     }
 
     // save activated grains to output image
+    tracing::info!("Saving activated grains to output image");
     let mut output = image::GrayImage::new(width, height);
     for grain in &emulsion {
         if grain.activated {
