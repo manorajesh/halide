@@ -30,7 +30,7 @@ impl Halide {
             y,
             radius: 1,
             silver_count: 0,
-            latent_threshold: 100,
+            latent_threshold: 10,
             activated: false,
             spectral_sensitivity: 0.0,
             absorption_probability: 0.5,
@@ -44,16 +44,19 @@ impl Halide {
 
         let area = std::f32::consts::PI * (self.radius as f32).powi(2);
         let photon_count = (intensity * area * exposure_time) as usize;
-        let mut reduced_silver_atoms = 0;
         for _ in 0..photon_count {
             if rand::random::<f32>() < self.absorption_probability {
-                reduced_silver_atoms += 1; // each photon that’s absorbed can form 1 Ag atom
-            }
-            if reduced_silver_atoms >= self.latent_threshold {
-                self.activated = true;
-                break;
+                self.silver_count += 1; // each photon that’s absorbed can form 1 Ag atom
+                if self.silver_count >= self.latent_threshold {
+                    self.activated = true;
+                }
             }
         }
+    }
+
+    fn develop(&self) -> f32 {
+        let dev_amount = (self.silver_count as f32) / (self.latent_threshold as f32);
+        dev_amount
     }
 }
 
@@ -68,14 +71,14 @@ fn create_random_emulsion(width: u32, height: u32, num_grains: usize) -> Vec<Hal
         let y = rng.random_range(0..height as usize);
 
         // Possibly randomize radius too
-        let radius = rng.random_range(1..3);
+        let radius = rng.random_range(1..2);
 
         emulsion.push(Halide {
             x,
             y,
             radius,
             silver_count: 0,
-            latent_threshold: 100,
+            latent_threshold: 10,
             activated: false,
             spectral_sensitivity: 0.0,
             absorption_probability: 0.5,
@@ -94,6 +97,7 @@ fn render_emulsion(emulsion: &Vec<Halide>, width: u32, height: u32) -> image::Gr
             let gx = grain.x as i32;
             let gy = grain.y as i32;
             let radius = grain.radius as i32;
+            let development = grain.develop();
 
             for dy in -radius as i32..=radius as i32 {
                 for dx in -radius as i32..=radius as i32 {
@@ -101,7 +105,8 @@ fn render_emulsion(emulsion: &Vec<Halide>, width: u32, height: u32) -> image::Gr
                         let px = gx + dx;
                         let py = gy + dy;
                         if px >= 0 && py >= 0 && px < (width as i32) && py < (height as i32) {
-                            output.put_pixel(px as u32, py as u32, image::Luma([255]));
+                            let intensity = (255.0 / development).round() as u8;
+                            output.put_pixel(px as u32, py as u32, image::Luma([intensity]));
                         }
                     }
                 }
@@ -118,11 +123,11 @@ fn main() {
     tracing::info!("Creating emulsion");
 
     // open input image
-    let image = image::open("input.png").unwrap();
+    let image = image::open("input.jpeg").unwrap();
     let image = image.to_luma16();
     let (width, height) = image.dimensions();
 
-    let num_grains = 100000;
+    let num_grains = 600000;
     let mut emulsion = create_random_emulsion(width, height, num_grains);
 
     // expose emulsion to image
@@ -133,14 +138,12 @@ fn main() {
         grain.expose(intensity, 5.0);
     });
 
-    for grain in &emulsion {
-        if grain.activated {
-            // println!("Grain at ({}, {}) activated", grain.x, grain.y);
-        }
-    }
-
     // save activated grains to output image
-    tracing::info!("Saving activated grains to output image");
-    let output = render_emulsion(&emulsion, width, height);
-    output.save("output.png").unwrap();
+    tracing::info!("Saving activated grains to negative image");
+    let output: image::ImageBuffer<image::Luma<u8>, Vec<u8>> = render_emulsion(
+        &emulsion,
+        width,
+        height
+    );
+    output.save("negative.png").unwrap();
 }
