@@ -1,7 +1,7 @@
 use crate::developer::Developer;
 use rand::Rng;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 /// Individual silver halide grain in a photographic emulsion
 pub struct Halide {
     /// x position of grain in emulsion

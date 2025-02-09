@@ -54,12 +54,12 @@ impl Emulsion {
         density
     }
 
-    pub fn render_emulsion(&self, width: u32, height: u32) -> image::RgbaImage {
-        let mut output = image::RgbaImage::new(width, height);
+    pub fn render_emulsion(&self, width: u32, height: u32) -> image::Rgba32FImage {
+        let mut output = image::Rgba32FImage::new(width, height);
 
         // Start white
         for pixel in output.pixels_mut() {
-            *pixel = image::Rgba([255, 255, 255, 255]);
+            *pixel = image::Rgba([1.0, 1.0, 1.0, 1.0]);
         }
 
         for grain in self.grains.iter() {
@@ -77,12 +77,12 @@ impl Emulsion {
             let (d_min, d_max) = (0.05, 2.5);
             let norm = (density - d_min) / (d_max - d_min); // in [0..1]
             // invert: norm=0 => bright, norm=1 => black
-            let intensity = (255.0 * (1.0 - norm)).clamp(0.0, 255.0) as u8;
+            let intensity = (1.0 * (1.0 - norm)).clamp(0.0, 1.0);
 
             output.put_pixel(
                 gx as u32,
                 gy as u32,
-                image::Rgba([intensity, intensity, intensity, 255])
+                image::Rgba([intensity, intensity, intensity, 1.0])
             );
         }
 
